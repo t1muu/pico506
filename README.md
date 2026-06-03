@@ -1,3 +1,15 @@
+## Overview of updates for two MFM drives, each with up to 16 heads (Acorn Archimedes/HD63463)
+
+- 4 head select lines are connected (inverted, so active high) and read in st506_head_irq()
+- 2 drive select lines are connected (not inverted, so active low) and also read in st506_head_irq()
+- Two drive images are concatenated into one file on the SD card
+- When a new drive is selected, the old drive cylinder is written, the new drive last cylinder read, and the step PIO restarted
+- Drive shape is 1024 cylinders, 11 heads (limited by available Pico RAM), 32 sectors per track, 256 byte sectors
+- Track length is 20864 (MFM) bytes, corresponding to 3594 RPM with 10Mbit/s clock
+- Currently reading works, format track doesn't work, write sector doesn't work reliably. WRITE_GATE timing to be investigated.
+
+Original README follows:
+
 # Pico506
 
 The smallest and cheapest ST-506/RLL/MFM hard drive emulator.
