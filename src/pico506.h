@@ -39,6 +39,8 @@ typedef struct {
 		uint *cyl_data;
 		uint cyl;
 		uint hd;
+		uint drive;
+		uint cyl_unselected;
 		volatile uint cyl_next;
 		bool write_any;
 		bool write_all;
@@ -65,7 +67,7 @@ void st506_loop(pico506_t *pico);
 bool st506_interrupt_check(pico506_t *pico);
 void st506_on_write(pico506_t *pico, uint trans_count, uint end_addr);
 void st506_on_head(pico506_t *pico, uint hd);
-void st506_on_seek(pico506_t *pico, uint cyl);
+void st506_on_seek(pico506_t *pico, uint cyl, bool changedrive);
 uint st506_do_write(pico506_t *pico);
 
 // storage.c

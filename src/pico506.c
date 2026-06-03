@@ -2,10 +2,15 @@
 
 #include "pico506.h"
 
+extern char __bss_end__;
+
 int main() {
 	set_sys_clock_khz(200000, true);
 	stdio_init_all();
 
+	char himem;
+	uint32_t freemem = &himem - &__bss_end__;
+	LT_D("Pico506 starting with %u bytes free", freemem);
 	pico506_t *pico = malloc(sizeof(*pico));
 	memset(pico, 0, sizeof(*pico));
 
@@ -21,15 +26,15 @@ int main() {
 	while (1) {
 		if (storage_init(pico) != 0)
 			goto retry;
-		if (storage_open(pico, "/HDD.RLL") != 0)
+		if (storage_open(pico, "/ARCST506.MFM") != 0)
 			goto retry;
 
-		if (pico->storage.file_size != DRIVE_BYTES) {
-			LT_E("Image file size invalid, found %u bytes, expected %u bytes", pico->storage.file_size, DRIVE_BYTES);
+		if (pico->storage.file_size != DRIVES * DRIVE_BYTES) {
+			LT_E("Image file size invalid, found %u bytes, expected %u bytes", pico->storage.file_size, DRIVES * DRIVE_BYTES);
 			storage_close(pico);
 			goto retry;
 		}
-		LT_I("Image file size OK");
+		LT_I("Image file size OK, cylinder size %u bytes, available memory %u bytes", CYLINDER_BYTES, freemem);
 
 		break;
 
@@ -41,7 +46,10 @@ int main() {
 	st506_start(pico);
 
 	LT_I(
-		"Emulator initialized - C/H/S: %u/%u/%u, data rate: %.1f Mb/s",
+		"Emulator initialized - %u drive%s, drive %u selected, C/H/S: %u/%u/%u, data rate: %.1f Mb/s",
+		DRIVES,
+		DRIVES==1?"":"s",
+		pico->st506.drive,
 		CYLINDERS,
 		HEADS,
 		SECTORS_PER_PULSE * PULSES_PER_TRACK,

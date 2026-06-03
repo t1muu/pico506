@@ -15,6 +15,8 @@ static pico506_t *g_pico = NULL;
 
 static void st506_head_irq(uint gpio, uint32_t event_mask);
 
+static bool headchange = false, drivechange = false;
+
 int st506_start(pico506_t *pico) {
 	uint malloc_len;
 	st506_stop(pico);
@@ -47,6 +49,8 @@ int st506_start(pico506_t *pico) {
 	gpio_put(PIN_TRACK_0, true);
 	gpio_put(PIN_READY, true);
 
+	gpio_pull_up(PIN_SELECT_0);
+	gpio_pull_up(PIN_SELECT_1);
 	pio_gpio_init(PIO_RDDT, PIN_READ);
 	pio_gpio_init(PIO_RDGT, PIN_INDEX);
 	pio_gpio_init(PIO_RDGT, PIN_SERVO_GATE);
@@ -54,11 +58,18 @@ int st506_start(pico506_t *pico) {
 	// store pico506_t* for IRQ callback
 	g_pico = pico;
 	gpio_set_irq_enabled_with_callback(PIN_HEAD_1, GPIO_IRQ_EDGE_RISE | GPIO_IRQ_EDGE_FALL, true, st506_head_irq);
+	gpio_set_irq_enabled_with_callback(PIN_HEAD_2, GPIO_IRQ_EDGE_RISE | GPIO_IRQ_EDGE_FALL, true, st506_head_irq);
+	gpio_set_irq_enabled_with_callback(PIN_HEAD_4, GPIO_IRQ_EDGE_RISE | GPIO_IRQ_EDGE_FALL, true, st506_head_irq);
+	gpio_set_irq_enabled_with_callback(PIN_HEAD_8, GPIO_IRQ_EDGE_RISE | GPIO_IRQ_EDGE_FALL, true, st506_head_irq);
+	gpio_set_irq_enabled_with_callback(PIN_SELECT_0, GPIO_IRQ_EDGE_FALL, true, st506_head_irq);
+	gpio_set_irq_enabled_with_callback(PIN_SELECT_1, GPIO_IRQ_EDGE_FALL, true, st506_head_irq);
 
 	// load initial cylinder data
 	LT_V("Loading cylinder data...");
+	pico->st506.drive = 0;
 	pico->st506.cyl = CYL_INVALID;
-	st506_on_seek(pico, /* cyl= */ 0);
+	pico->st506.cyl_unselected = 0;
+	st506_on_seek(pico, /* cyl= */ 0, false);
 
 	// load all PIO programs
 	LT_V("Loading PIO programs...");
@@ -144,6 +155,11 @@ void st506_stop(pico506_t *pico) {
 	LT_V("Disabling GPIO...");
 	g_pico = NULL;
 	gpio_set_irq_enabled_with_callback(PIN_HEAD_1, GPIO_IRQ_EDGE_RISE | GPIO_IRQ_EDGE_FALL, false, NULL);
+	gpio_set_irq_enabled_with_callback(PIN_HEAD_2, GPIO_IRQ_EDGE_RISE | GPIO_IRQ_EDGE_FALL, false, NULL);
+	gpio_set_irq_enabled_with_callback(PIN_HEAD_4, GPIO_IRQ_EDGE_RISE | GPIO_IRQ_EDGE_FALL, false, NULL);
+	gpio_set_irq_enabled_with_callback(PIN_HEAD_8, GPIO_IRQ_EDGE_RISE | GPIO_IRQ_EDGE_FALL, false, NULL);
+	gpio_set_irq_enabled_with_callback(PIN_SELECT_0, GPIO_IRQ_EDGE_FALL, false, NULL);
+	gpio_set_irq_enabled_with_callback(PIN_SELECT_1, GPIO_IRQ_EDGE_FALL, false, NULL);
 	gpio_set_function(PIN_SERVO_GATE, GPIO_FUNC_NULL);
 	gpio_set_function(PIN_INDEX, GPIO_FUNC_NULL);
 	gpio_set_function(PIN_READ, GPIO_FUNC_NULL);
@@ -158,10 +174,25 @@ void st506_stop(pico506_t *pico) {
 }
 
 void st506_loop(pico506_t *pico) {
+	// check for drive change
+	if (drivechange) {
+		LT_D("Changed to drive %u", 1-pico->st506.drive);
+		// write cylinder if necessary on deselected drive, switch parameters and then read cylinder on reselected drive
+		st506_on_seek(pico, pico->st506.cyl, true);
+		drivechange = false;
+		gpio_put(PIN_READY, true);
+	}
+	
+	// check for head change (only for debug message)
+	if(headchange) {
+		LT_D("Changed to head %u", pico->st506.hd);
+		headchange = false;
+	}
+	
 	// check cylinder number received from STEP PIO
 	uint cyl_next = pico->st506.cyl_next;
 	if (cyl_next != CYL_INVALID) {
-		st506_on_seek(pico, cyl_next);
+		st506_on_seek(pico, cyl_next, false);
 	}
 
 	// check write address received from WRRM PIO
@@ -182,22 +213,32 @@ void st506_loop(pico506_t *pico) {
 	if (pico->st506.write_any &&
 		absolute_time_diff_us(pico->st506.last_activity, get_absolute_time()) > IDLE_TIMEOUT * 1000) {
 		// do a dummy seek to write any pending changes
-		st506_on_seek(pico, pico->st506.cyl);
+		st506_on_seek(pico, pico->st506.cyl, false);
 	}
 }
 
 bool st506_interrupt_check(pico506_t *pico) {
 	// interrupt seek operations if a step happens during the readout
 	// but only if the next track is actually different from the one being loaded
-	return pico->st506.cyl_next != CYL_INVALID && pico->st506.cyl_next != pico->st506.cyl;
+	return (pico->st506.cyl_next != CYL_INVALID && pico->st506.cyl_next != pico->st506.cyl) | drivechange;
 }
 
 static void st506_head_irq(uint gpio, uint32_t event_mask) {
 	(void)gpio, (void)event_mask;
 	if (!g_pico)
 		return;
-	uint hd = gpio_get(PIN_HEAD_1);
-	st506_on_head(g_pico, hd);
+	if((gpio == PIN_SELECT_0) || (gpio == PIN_SELECT_1)) {
+		// if a drive becomes selected, and was not the one previously selected, then change to this new drive
+		if (((gpio == PIN_SELECT_0) && (g_pico->st506.drive == 1)) || ((gpio == PIN_SELECT_1) && (g_pico->st506.drive == 0))) {
+			gpio_put(PIN_READY, false);
+			drivechange = true;
+		}
+	}
+	else {
+		uint hd = gpio_get(PIN_HEAD_1) | (gpio_get(PIN_HEAD_2)<<1) | (gpio_get(PIN_HEAD_4)<<2) | (gpio_get(PIN_HEAD_8)<<3);
+		st506_on_head(g_pico, hd);
+		headchange = true;
+	}
 }
 
 void st506_on_write(pico506_t *pico, uint trans_count, uint end_addr) {
@@ -241,10 +282,10 @@ void st506_on_head(pico506_t *pico, uint hd) {
 	// store last activity time
 	pico->st506.last_activity = get_absolute_time();
 	// run the clicker on head change
-	clicker_enqueue(CYL_INVALID);
+	//clicker_enqueue(CYL_INVALID);
 }
 
-void st506_on_seek(pico506_t *pico, uint cyl) {
+void st506_on_seek(pico506_t *pico, uint cyl, bool changedrive) {
 	if (cyl >= CYLINDERS)
 		cyl = CYLINDERS - 1;
 
@@ -290,23 +331,35 @@ void st506_on_seek(pico506_t *pico, uint cyl) {
 		ulong micros = absolute_time_diff_us(start, end);
 		double speed = (double)write_bytes / ((double)micros / 1000000.0) / 1024.0;
 		LT_D(
-			"Write of cylinder %u (%u bytes) finished in %lu us -> %.03f KiB/s",
+			"Write of cylinder %u (%u bytes) to drive %u finished in %lu us -> %.03f KiB/s",
 			pico->st506.cyl,
 			write_bytes,
+			pico->st506.drive,
 			micros,
 			speed
 		);
 	}
-
-	// seeking not possible - already on the first/last track - do a dummy wait
-	if (cyl == pico->st506.cyl) {
-		LT_D("Already on cylinder %u", cyl);
-		sleep_us(680);
-		gpio_put(PIN_SEEK_COMPLETE, true);
-		return;
+	
+	if (changedrive) {
+		// swap current cylinder number from unselected to newly selected drive
+		st506_step_program_stop(PIO_SM_STEP);
+		pico->st506.cyl = pico->st506.cyl_unselected;
+		pico->st506.cyl_unselected = cyl;
+		pico->st506.cyl_next = CYL_INVALID;
+		st506_step_program_start(PIO_SM_STEP, pico->st506.cyl, &pico->st506.cyl_next, CYLINDERS - 1);
+		pico->st506.drive = 1 - pico->st506.drive;
 	}
-	// otherwise update the current track number
-	pico->st506.cyl = cyl;
+	else {
+		// seeking not possible - already on the first/last track - do a dummy wait
+		if (cyl == pico->st506.cyl) {
+			LT_D("Already on cylinder %u", cyl);
+			sleep_us(680);
+			gpio_put(PIN_SEEK_COMPLETE, true);
+			return;
+		}
+		// otherwise update the current track number
+		pico->st506.cyl = cyl;
+	}
 
 	absolute_time_t start = get_absolute_time();
 	uint read_bytes		  = CYLINDER_BYTES;
@@ -314,7 +367,7 @@ void st506_on_seek(pico506_t *pico, uint cyl) {
 		// read data from storage
 		int err = storage_read(
 			pico,
-			cyl * CYLINDER_BYTES,
+			(pico->st506.drive * CYLINDERS + cyl) * CYLINDER_BYTES,
 			pico->st506.cyl_data,
 			CYLINDER_BYTES,
 			(sd_interrupt_t)st506_interrupt_check
@@ -331,9 +384,10 @@ void st506_on_seek(pico506_t *pico, uint cyl) {
 	ulong micros = absolute_time_diff_us(start, end);
 	double speed = (double)read_bytes / ((double)micros / 1000000.0) / 1024.0;
 	LT_D(
-		"Read of cylinder %u (%u bytes) finished in %lu us -> %.03f KiB/s",
+		"Read of cylinder %u (%u bytes) from drive %u finished in %lu us -> %.03f KiB/s",
 		pico->st506.cyl,
 		read_bytes,
+		pico->st506.drive,
 		micros,
 		speed
 	);
@@ -349,7 +403,7 @@ void st506_on_seek(pico506_t *pico, uint cyl) {
 
 uint st506_do_write(pico506_t *pico) {
 	uint out_bytes = 0;
-	uint out_pos   = pico->st506.cyl * CYLINDER_BYTES;
+	uint out_pos   = (pico->st506.drive * CYLINDERS + pico->st506.cyl) * CYLINDER_BYTES;
 	int err		   = 0;
 
 	if (pico->st506.write_all) {
