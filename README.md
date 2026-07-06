@@ -8,6 +8,8 @@
 - Track length is 20864 (MFM) bytes, corresponding to 3594 RPM with 10Mbit/s clock
 - Currently reading works, format track doesn't work, write sector doesn't work reliably. WRITE_GATE timing to be investigated.
 
+![Pico506 example schematic for Archimedes](pico506arc.png)
+
 Original README follows:
 
 # Pico506
