@@ -6,8 +6,8 @@
 - When a new drive is selected, the old drive cylinder is written, the new drive last cylinder read, and the step PIO restarted
 - Drive shape is 1024 cylinders, 11 heads (limited by available Pico RAM), 32 sectors per track, 256 byte sectors
 - Track length is 20864 (MFM) bytes, corresponding to 3594 RPM with 10Mbit/s clock
-- Currently reading works, format track doesn't work, write sector doesn't work reliably. WRITE_GATE timing to be investigated.
-
+- Currently reading and writing work (with LT_LOGLEVEL set to LT_LEVEL_INFO), format track doesn't work (create a drive image instead)
+  
 ![Pico506 example schematic for Archimedes](pico506arc.png)
 
 Original README follows:
