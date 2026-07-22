@@ -49,8 +49,14 @@ int st506_start(pico506_t *pico) {
 	gpio_put(PIN_TRACK_0, true);
 	gpio_put(PIN_READY, true);
 
+	gpio_init_mask((1 << PIN_HEAD_1) | (1 << PIN_HEAD_2) | (1 << PIN_HEAD_4) | (1 << PIN_HEAD_8) | (1 << PIN_SELECT_0) | (1 << PIN_SELECT_1));
+	gpio_pull_up(PIN_HEAD_1);
+	gpio_pull_up(PIN_HEAD_2);
+	gpio_pull_up(PIN_HEAD_4);
+	gpio_pull_up(PIN_HEAD_8);
 	gpio_pull_up(PIN_SELECT_0);
 	gpio_pull_up(PIN_SELECT_1);
+	
 	pio_gpio_init(PIO_RDDT, PIN_READ);
 	pio_gpio_init(PIO_RDGT, PIN_INDEX);
 	pio_gpio_init(PIO_RDGT, PIN_SERVO_GATE);
@@ -166,7 +172,13 @@ void st506_stop(pico506_t *pico) {
 	gpio_set_function(PIN_READY, GPIO_FUNC_NULL);
 	gpio_set_function(PIN_TRACK_0, GPIO_FUNC_NULL);
 	gpio_set_function(PIN_SEEK_COMPLETE, GPIO_FUNC_NULL);
-
+	gpio_set_function(PIN_HEAD_1, GPIO_FUNC_NULL);
+	gpio_set_function(PIN_HEAD_2, GPIO_FUNC_NULL);
+	gpio_set_function(PIN_HEAD_4, GPIO_FUNC_NULL);
+	gpio_set_function(PIN_HEAD_8, GPIO_FUNC_NULL);
+	gpio_set_function(PIN_SELECT_0, GPIO_FUNC_NULL);
+	gpio_set_function(PIN_SELECT_1, GPIO_FUNC_NULL);
+	
 	LT_V("Freeing memory...");
 	free(pico->st506.cyl_data);
 	free(pico->st506.pulse_data);
