@@ -375,7 +375,7 @@ void st506_on_seek(pico506_t *pico, uint cyl, bool changedrive) {
 		if (err) {
 			// invalidate current cylinder on error or interrupt
 			pico->st506.cyl = CYL_INVALID;
-			gpio_put(PIN_SEEK_COMPLETE, true);
+			if(pico->st506.cyl_next == CYL_INVALID) gpio_put(PIN_SEEK_COMPLETE, true); // only if there is no seek pending
 			return;
 		}
 	}
