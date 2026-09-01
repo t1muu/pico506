@@ -32,7 +32,7 @@
 
 #define DATA_RATE		  5000000
 #define MARK_LBYTES		  32
-#define HEADER_LBYTES	  38
+#define HEADER_LBYTES	  32
 #define DATA_LBYTES		  256
 #define SECTORS_PER_PULSE 1
 #define PULSES_PER_TRACK  32
