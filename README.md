@@ -5,8 +5,9 @@
 - Two drive images are concatenated into one file on the SD card
 - When a new drive is selected, the old drive cylinder is written, the new drive last cylinder read, and the step PIO restarted
 - Drive shape is 1024 cylinders, 11 heads (limited by available Pico RAM), 32 sectors per track, 256 byte sectors
-- Track length is 20864 (MFM) bytes, corresponding to 3594 RPM with 10Mbit/s clock
-- Currently reading and writing work (with LT_LOGLEVEL set to LT_LEVEL_INFO), format track doesn't work (create a drive image instead)
+- Track length is 20480 (MFM) bytes, corresponding to 3662 RPM with 10Mbit/s clock
+- Currently reading and writing work, format track doesn't work (create a drive image instead)
+- Use the C program arcst506mfm.c to either create a blank drive image, or convert an image with the same shape from an emulator
   
 ![Pico506 example schematic for Archimedes](pico506arc.png)
 
